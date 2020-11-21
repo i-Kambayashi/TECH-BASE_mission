@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>Mission_5-1</title>
+</head>
+<body>
+    <h1>Mission_5-1</h1>
+    <h2>
+        ミッション3を通して作成した機能と同内容の掲示板を、MySQL操作を使って実現しよう
+    </h2>
+    <?php
+        $name_edit = "";
+        $comment_edit = "";
+
+        function ACSESS(){
+            $dsn = 'mysql:dbname=tb22****db;host=localhost';
+        	$user = 'tb-22****';
+        	$password = '**********';
+        	
+        	$pdo = new PDO($dsn, $user, $password, array(PDO::ATTR_ERRMODE => PDO::ERRMODE_WARNING));
+            return $pdo;
+        }
+        
+        function CREATE($pdo){
+            $sql = 'CREATE TABLE IF NOT EXISTS tbtest'
+        	. ' ('
+        	. 'id INT AUTO_INCREMENT PRIMARY KEY,'
+        	. 'name char(32),'
+        	. 'comment TEXT,'
+        	. 'date DATETIME,' // DATETIME 型は日付と時刻を格納するのに使用するデータ型．'YYYY-MM-DD HH:MM:SS' が基本となるフォーマット．
+        	. 'password char(10)' // passの長さは10文字以内とする
+        	. ');';
+        	$stmt = $pdo -> query($sql);
+        }
+        
+        function INSERT($pdo, $name, $comment){
+            $sql = $pdo -> prepare("INSERT INTO tbtest (name, comment) VALUES (:name, :comment)");
+            $sql -> bindParam(':name', $name, PDO::PARAM_STR);
+            $sql -> bindParam(':comment', $comment, PDO::PARAM_STR);
+            $sql -> execute();
+        }
+        
+        function UPDATE($pdo, $name, $comment, $id){
+            //bindParamの引数（:nameなど）は4-2でどんな名前のカラムを設定したかで変える必要がある。
+            
+            $sql = 'UPDATE tbtest SET name=:name, comment=:comment where id=:id';
+            $stmt = $pdo -> prepare($sql);
+            $stmt -> bindParam(':name', $name, PDO::PARAM_STR);
+            $stmt -> bindParam(':comment', $comment, PDO::PARAM_STR);
+            $stmt -> bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt -> execute();
+        }
+        
+        function DELETE($pdo, $id){
+            $sql = 'DELETE FROM tbtest WHERE id=:id';
+            $stmt = $pdo -> prepare($sql);
+            $stmt -> bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt -> execute();
+        }
+        
+        function SHOW_TABLE($pdo){
+            echo "---------------------------------<br>";
+            echo "【　投稿一覧　】<br>";
+            
+            $sql = 'SELECT * FROM tbtest';
+            $stmt = $pdo -> query($sql);
+            $results = $stmt -> fetchAll(); // 一気に配列(辞書?)形式で選択したデータを取得
+            foreach($results as $row){
+                //$rowの中にはテーブルのカラム名が入る
+                echo "No.".$row['id'].' '." ";
+                echo $row['name'].'';
+                echo "「".$row['comment'].'」 ';
+                echo $row['date'].'<br>';
+                
+                echo '<hr>';
+            }
+        }
+        // パスワードの一致を確認する関数
+        function CHECK_PASS($pdo, $pass_check, $id){
+            
+            $sql = 'SELECT * FROM tbtest WHERE id=:id';
+            $stmt = $pdo -> prepare($sql);
+            $stmt -> bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt -> execute();
+            
+            $results = $stmt -> fetchAll(); // 
+
+            if(empty($results[0][0])){
+                echo "No post.<br>";
+                return "NoLock";
+			}else{
+                $result = $results[0]['password'];
+			}
+
+            if(!empty($result)){ // 結果がちゃんと帰ってきているときの処理
+                if($result == $pass_check){
+                    return "Unlocked";
+                }else{
+                    echo "Invarid password<br>";
+                    return "Locked";
+                }
+            }else{// 結果が空白の時の処理
+                echo "No password.<br>";
+                return "NoLock";
+            }
+        }
+    ?>
+    
+    <!-- 投稿フォームの送信が押された際の処理 -->
+    <?php
+        // 送信された名前とコメントが空でない場合に処理を実行
+        if(!empty($_POST["name"]) and !empty($_POST["comment"])){
+            
+            // 名前とコメントを変数に代入
+            $name = $_POST["name"];
+            $comment = $_POST["comment"];
+            $date = date("Y/m/d/ H:i.s"); //投稿日時の設定
+            $num_edit = $_POST["num_edit_hidden"];
+            $num_edit = (int)$num_edit;
+            $pass_post = $_POST["pass_post"];
+
+            $pdo = ACSESS();
+            
+            if($num_edit){ // 編集モードの時の処理
+                if(!empty($_POST["pass_post"])){
+                    CREATE($pdo);
+                    $check_pass = CHECK_PASS($pdo, $pass_post, $num_edit);
+                    //$check_pass = "Unlocked";
+                    if($check_pass == "Unlocked"){
+                        // 内容を更新する
+                        $sql = 'UPDATE tbtest SET name=:name, comment=:comment where id=:id';
+                        $stmt = $pdo -> prepare($sql);
+                        $stmt -> bindParam(':name', $name, PDO::PARAM_STR);
+                        $stmt -> bindParam(':comment', $comment, PDO::PARAM_STR);
+                        $stmt -> bindParam(':id', $num_edit, PDO::PARAM_INT);
+                        $stmt -> execute();
+                    }
+                }else{
+                    echo "Please enter the password.<br>";
+                }
+                unset($num_edit);
+            
+            }else{ // 通常投稿
+                CREATE($pdo);
+                // 投稿を追加する
+                $sql = 'INSERT INTO tbtest (name, comment, date, password) VALUES (:name, :comment, :date, :password)';
+                $stmt = $pdo -> prepare($sql);
+                $stmt -> bindParam(':name', $name, PDO::PARAM_STR);
+                $stmt -> bindParam(':comment', $comment, PDO::PARAM_STR);
+                $stmt -> bindParam(':date', $date, PDO::PARAM_STR);
+                $stmt -> bindParam(':password', $pass_post, PDO::PARAM_STR);
+                
+                $stmt -> execute();
+                
+                unset($num_edit);
+            }
+        }
+    ?>
+    
+    <!-- 削除フォームの送信が押された際の処理 -->
+    <?php
+        // 削除する番号が送られているときその番号をdel.txtに保存する
+        if(!empty($_POST["num_del"])){
+            if(!empty($_POST["pass_del"])){
+                $num_del = $_POST["num_del"];
+                $num_del = (int)$num_del;
+                
+                $pass_del = $_POST["pass_del"];
+
+                $pdo = ACSESS();
+                // テーブルが存在しないときの処理が必要
+                $check_pass = CHECK_PASS($pdo, $pass_del, $num_del);
+
+                if($check_pass == "Unlocked"){// passが一致しているときの処理
+                    $sql = 'DELETE FROM tbtest WHERE id=:id';
+                    $stmt = $pdo -> prepare($sql);
+                    $stmt -> bindParam(':id', $num_del, PDO::PARAM_INT);
+                    $stmt -> execute();
+                    
+                    if(true){
+                    }else{ // 削除する番号が存在しない値だった時の例外処理
+                        echo "Invalid number.<br>";
+                    }//passが一致していた時の処理ここまで
+                }
+            }else{// passが空欄だった時の処理
+                echo "Please enter the password.<br>";
+            }
+        }
+    ?>
+    
+    <!-- 編集フォームの送信が押された際の処理 -->
+    <?php
+        // 編集する番号が送られているときその番号をdel.txtに保存する
+        if(!empty($_POST["num_edit"])){
+            if(!empty($_POST["pass_edit"])){
+                $num_edit = $_POST["num_edit"];
+                $num_edit = (int)$num_edit; // int型に型変換
+                $pass_edit = $_POST["pass_edit"];
+
+                $pdo = ACSESS();
+                $check_pass = CHECK_PASS($pdo, $pass_edit, $num_edit);
+                //$check_pass = "Unlocked";
+
+                if($check_pass == "Unlocked"){// passが一致しているときの処理
+                    // 編集番号の投稿の名前，投稿内容を投稿フォームに入力
+                    $sql = 'SELECT * FROM tbtest WHERE id=:id';
+                    $stmt = $pdo -> prepare($sql);
+                    $stmt -> bindParam(':id', $num_edit, PDO::PARAM_INT);
+                    $stmt -> execute();
+                    
+                    $results = $stmt; // 結果は一つだけのはず
+
+                    foreach($results as $result){
+                         $name_edit = $result['name'];     
+                         $comment_edit = $result['comment'];
+					}
+                }// passが一致しているときの処理ここまで
+            }else{
+                echo "Please enter the password<br>";
+            }
+        }
+    ?>
+    
+    【投稿フォーム】
+    <form action="" method="post">
+        名前：　　　　
+        <input type="text" name="name" value="<?php echo $name_edit;?>" placeholder="名前"><br>
+        コメント：　　
+        <input type="text" name="comment" value="<?php echo $comment_edit;?>" placeholder="コメント"><br>
+        パスワード：　
+        <input type="text" name="pass_post" value="" placeholder="password">
+        <input type="hidden" name="num_edit_hidden" value="<?php echo $num_edit;?>" placeholder=""><br>
+        <input type="submit" name="submit" value="送信">
+    </form>
+    
+    【削除フォーム】
+    <form action="" method="post">
+        投稿番号：　　
+        <input type="text" name="num_del" value="" placeholder="投稿番号"><br>
+        パスワード：　
+        <input type="text" name="pass_del" value="" placeholder="password"><br>
+        <input type="submit" name="submit" value="削除">
+    </form>
+    
+    【編集フォーム】
+    <form action="" method="post">
+        投稿番号：　　
+        <input type="text" name="num_edit" value="" placeholder="投稿番号"><br>
+        パスワード：　
+        <input type="text" name="pass_edit" value="" placeholder="password"><br>
+        <input type="submit" name="submit" value="編集">
+    </form>
+    
+    <br>
+    <form action="" method="post">
+        <input type="hidden" name="show" value="1" placeholder="">
+        <input type="submit" name="submit" value="表示">
+    </form>
+     
+    <form action="" method="post">
+        <input type="hidden" name="all_del" value="1" placeholder="">
+        <input type="submit" name="submit" value="投稿の削除">
+    </form>
+    
+    <?php
+        if(!empty($_POST["name"]) or !empty($_POST["comment"]) or !empty($_POST["num_del"]) or 
+        !empty($_POST["num_edit"]) or !empty($_POST["show"]) or !empty($_POST["num_edit_hidden"])){
+            $pdo = ACSESS();
+            SHOW_TABLE($pdo); // 投稿内容の表示
+        }
+    ?>
+    
+    <?php
+        if(!empty($_POST["all_del"])){
+            $pdo = ACSESS();
+            // ファイルを削除
+            $sql = 'DROP TABLE tbtest';
+            $stmt = $pdo -> query($sql);
+        }
+    ?>
+    
+</body>
+</html>
